@@ -3,14 +3,18 @@ import im
 
 
 DEFAULT_SERVER = "w81310jh"  # Default server name
+ADMIN_PASSWORD = "admin"
+ATTEMPTS = 5
+WAIT_1 = 100
+WAIT_2 = 6
 
 # Declares the global server and user code variables
 Server = 0
 UserCode = 0
 
 # Defines server and user states for the FSM
-ServerStates = {"init": "0", "run": "1", "quit": "2"}
-UserStates = {"init": "0", "online": "1", "ready": "2", "waiting": "3", "quit": "4"}
+ServerStates = {"init": 0, "run": 1, "quit": 2}
+UserStates = {"init": 0, "online": 1, "ready": 2, "waiting": 3, "quit": 4}
 
 # Defines the names of the user slots on the server
 UserCodes = ["user1", "user2"]
@@ -33,8 +37,9 @@ def serverInit(server):
 	global UserCodes
 
 	# Reset performed if the current server state is quit (meaning the server isn't currently being used)
-	if (int(server["state"] == int(ServerStates["quit"]))):
+	if (int(server["state"]) == ServerStates["quit"]):
 		serverReset(server)
+		return
 
 	# Reset also performed if the server is not configured correctly
 	keys = server.keys()
@@ -56,9 +61,9 @@ def serverJoin(server, userName):
 	# Users can only join if the server isn't currently running a chat and there is a free slot
 	if (Server["state"] != ServerStates["run"]):
 		for i in range(len(UserCodes)):
-			if ((int(Server[UserCodes[i] + "state"]) == int(UserStates["init"])) or (int(Server[UserCodes[i] + "state"]) == int(UserStates["quit"]))):
+			if ((int(Server[UserCodes[i] + "state"]) == UserStates["init"]) or (int(Server[UserCodes[i] + "state"]) == UserStates["quit"])):
 				# Assigns a user to a slot
-				Server[UserCodes[i] + "state"] = UserStates["online"]
+				Server[UserCodes[i] + "state"] = str(UserStates["online"])
 				Server[UserCodes[i] + "name"] = userName
 				# print(UserCodes[i] + " => online 1")
 				return UserCodes[i]
@@ -67,11 +72,11 @@ def serverJoin(server, userName):
 # Resets the server and adds the necessary states
 def serverReset(server):
 	global ServerStates, UserStates, UserCodes
-	print("Running a server reset")
+	print("reset")
 	server.clear()
-	server["state"] = ServerStates["init"]
+	server["state"] = str(ServerStates["init"])
 	for i in range(len(UserCodes)):
-		server[UserCodes[i] + "state"] = UserStates["init"]
+		server[UserCodes[i] + "state"] = str(UserStates["init"])
 		server[UserCodes[i] + "name"] = ""
 		server[UserCodes[i] + "message"] = ""
 
@@ -79,9 +84,10 @@ def serverReset(server):
 def serverQuit(server):
 	global ServerStates, UserStates
 	for i in range(len(UserCodes)):
-		server[UserCodes[i] + "state"] = UserStates["quit"]
+		server[UserCodes[i] + "state"] = str(UserStates["quit"])
 		server[UserCodes[i] + "name"] = ""
 		server[UserCodes[i] + "message"] = ""
+	Server["state"] = str(ServerStates["quit"])
 
 # Used to simplify code, since each string from server requires this process to be usable
 # Returns the decoded string representation with '\n's removed for the string located in the requested user indexes
@@ -96,7 +102,7 @@ def checkForStart():
 	global Server, ServerStates, UserStates, UserCodes
 	start = False
 	for i in range(len(UserCodes)):
-		if (int(Server[UserCodes[i] + "state"]) == int(UserStates["online"])):
+		if (int(Server[UserCodes[i] + "state"]) == UserStates["online"]):
 			start = True
 	return start
 
@@ -106,7 +112,7 @@ def checkForQuit():
 	global Server, UserStates, UserCodes, UserCode
 	quit = False
 	for i in range(len(UserCodes)):
-		if (int(Server[UserCodes[i] + "state"]) == int(UserStates["quit"])):
+		if (int(Server[UserCodes[i] + "state"]) == UserStates["quit"]):
 			quit = True
 			break
 	if (quit):
@@ -115,14 +121,6 @@ def checkForQuit():
 		return -1
 	return 0
 
-
-# Indicates that one user is quitting the chat, triggering the termination process
-def quit():
-	global Server, UserStates, UserCode
-	Server[UserCode + "message"] = ""
-	# print(UserCode + " => quit 2")
-	Server[UserCode + "state"] = UserStates["quit"]
-	Server["state"] = ServerStates["quit"]
 
 # Sends a message on the server by writing a to the current user's assigned message index
 # If the user enters \quit, then the function calls quit() to begin the termination process
@@ -133,7 +131,7 @@ def sendMessage(message):
 		return
 	Server[UserCode + "message"] = message
 	# print(UserCode + " => waiting 3")
-	Server[UserCode + "state"] = UserStates["waiting"]
+	Server[UserCode + "state"] = str(UserStates["waiting"])
 	time.sleep(0.5)
 
 # Outputs a message received from the other user by reading the current value in that user's assigned message index
@@ -141,20 +139,28 @@ def getMessage(otherUserCode):
 	global Server, UserStates, UserCode
 	message = serverGetString(Server, otherUserCode, "message")
 	# print(UserCode + " => ready 4")
-	Server[UserCode + "state"] = UserStates["ready"]
+	Server[UserCode + "state"] = str(UserStates["ready"])
 	time.sleep(0.5)
 	return message
+
+
+# Indicates that one user is quitting the chat, triggering the termination process
+def quit():
+	global Server, UserStates, UserCode
+	Server[UserCode + "message"] = ""
+	# print(UserCode + " => quit 2")
+	Server[UserCode + "state"] = str(UserStates["quit"])
 
 # Waits 0.1s, informing the user every 100 repetitions (10 seconds)
 # Users are given the opportunity to quit every 600 repetitions (60 seconds) to avoid an infinite wait
 def wait(counts):
-	global UserStates
+	global UserStates, WAIT_1, WAIT_2
 	counts[0] += 1
-	if (counts[0] == 50):
+	if (counts[0] == WAIT_1):
 		print("Waiting for other user...")
 		counts[0] = 0
 		counts[1] += 1
-	if (counts[1] == 6):
+	if (counts[1] == WAIT_2):
 		counts[1] = 0
 		print("You've been waiting a while, would you like to quit? (y/n)")
 		query = input("> ")
@@ -165,7 +171,7 @@ def wait(counts):
 
 
 def ChatProtocol():
-	global Server, ServerStates, UserStates, UserCode, DEFAULT_SERVER
+	global Server, ServerStates, UserStates, UserCode, DEFAULT_SERVER, ADMIN_PASSWORD, ATTEMPTS
 
 	# Gives the option to enter a custom university username to access a different server
 	print("Enter the server name you want to use (press enter to use the default)")
@@ -178,14 +184,29 @@ def ChatProtocol():
 	Server = serverConnect(serverName)
 
 	# Allows for a user to clean up the server if the server wasn't correctly cleaned after the previous chat
-	print("If you know you are the first user to enter the chat, then it is a good idea to clear the server log to avoid both participants waiting for the other.")
-	print("Would you like to clear the previous server log? (y/n)")
-	query = input("> ")
-	if (query.lower() in ["y", "yes", "ok", "okay"]):
-		serverReset(Server)
+	if (int(Server["state"]) != ServerStates["init"]):
+		print("\nIf you know you are the first user to enter the chat, then it is a good idea to clear the server log to avoid both participants waiting for the other\nWould you like to clear the previous server log? (y/n)")
+		query = input("> ")
+		if (query.lower() in ["y", "yes", "ok", "okay"]):
+			accessGranted = False
+			for i in range(ATTEMPTS):
+				print("This is a restricted operation. Please enter the admin password.")
+				password = input("> ")
+				if (password == ADMIN_PASSWORD):
+					accessGranted = True
+					break
+				if (i + 1 == ATTEMPTS):
+					print("The password you entered is incorrect, you have run out of attempts - the server won't be cleaned")
+				elif (i + 2 == ATTEMPTS):
+					print("The password you entered is incorrect, you have 1 attempt left")
+				else:
+					print("The password you entered is incorrect, you have " + str(ATTEMPTS - (i + 1)) + " attempts left")
+			if accessGranted:
+				print("Password accepted, the server has been cleaned")
+				serverReset(Server)
 
 	# Asks for a username
-	print("Enter your username")
+	print("\nEnter your username")
 	userName = input("> ")
 
 	# Attempts to join the user to the server
@@ -193,75 +214,92 @@ def ChatProtocol():
 	if (UserCode == -1):
 		print("Unfortunately the chat server is currently full")
 		return
-	print("You've successfully joined the chat server as " + serverGetString(Server, UserCode, "name"))
+	print("You've successfully joined the chat server as " + serverGetString(Server, UserCode, "name") + ", finding the other user...")
 	
+	# Gets other user's code
 	temp = UserCodes.copy()
 	temp.remove(UserCode)
 	otherUserCode = temp[0]
 
-	# Waits for another user to join server
-	counts = [0, 0]
-	while ((int(Server[otherUserCode + "state"]) == int(UserStates["init"])) or (int(Server[otherUserCode + "state"]) == int(UserStates["quit"]))):
-		counts = wait(counts)
-		quit = checkForQuit()
-		if (quit != 0):
-			serverQuit(Server)
-			print("You've ended the chat\nConnection Terminated")
-			return
+	run = True
+	while (run == True):
+		print(1)
+		# Waits for another user to join server
+		counts = [0, 0]
+		while ((int(Server[otherUserCode + "state"]) == UserStates["init"]) or (int(Server[otherUserCode + "state"]) == UserStates["quit"])):
+			counts = wait(counts)
+			quit = checkForQuit()
+			if (quit != 0):
+				serverQuit(Server)
+				print("You've ended the chat\nConnection Terminated")
+				return
 
-	# Determines who joined server first, and therefore sends the first message
-	if (UserCode == UserCodes[0]):
-		# print(UserCode + " => ready 5")
-		Server[UserCode + "state"] = UserStates["ready"]
-	else:
-		# print(UserCode + " => waiting 6")
-		Server[UserCode + "state"] = UserStates["waiting"]
-	Server["state"] = ServerStates["run"]
+		# Determines who joined server first, and therefore sends the first message
+		if (UserCode == UserCodes[0]):
+			# print(UserCode + " => ready 5")
+			Server[UserCode + "state"] = str(UserStates["ready"])
+		else:
+			# print(UserCode + " => waiting 6")
+			Server[UserCode + "state"] = str(UserStates["waiting"])
+		Server["state"] = str(ServerStates["run"])
 
-	print("You are talking with " + serverGetString(Server, otherUserCode, "name") + ".")
+		print("\nYou are talking with " + serverGetString(Server, otherUserCode, "name") + ".\n")
 
-	# Main body of protocol
-	# While the chat is still running, the current user waits for a message and then can respond
-	while (int(Server["state"]) == int(ServerStates["run"])):
-		# Waits for other user to send a message, before recieving it
-		if (int(Server[UserCode + "state"]) == int(UserStates["waiting"])):
-			counts = [0, 0]
-			while (int(Server[otherUserCode + "state"]) == int(UserStates["ready"])):
-				counts = wait(counts)
+		# Main body of protocol
+		# While the chat is still running, the current user waits for a message and then can respond
+		while (int(Server["state"]) == ServerStates["run"]):
+			print(2)
+			# Waits for other user to send a message, before recieving it
+			if (int(Server[UserCode + "state"]) == UserStates["waiting"]):
+				counts = [0, 0]
+				while (int(Server[otherUserCode + "state"]) == UserStates["ready"]):
+					counts = wait(counts)
+
+					# Checks for quit
+					quit = checkForQuit()
+					if abs(quit):
+						break
 
 				# Checks for quit
 				quit = checkForQuit()
 				if abs(quit):
 					break
 
-			# Checks for quit
-			quit = checkForQuit()
-			if abs(quit):
-				break
+				# Displays message received from other user, checking if they have requested a quit
+				message = getMessage(otherUserCode)
+				print(serverGetString(Server, otherUserCode, "name") + ": " + message)
 
-			# Displays message received from other user, checking if they have requested a quit
-			message = getMessage(otherUserCode)
-			print(serverGetString(Server, otherUserCode, "name") + ": " + message)
+			# Sends current user's next message, checking if they have requested \quit
+			if (int(Server[UserCode + "state"]) == UserStates["ready"]):
+				message = input(serverGetString(Server, UserCode, "name") + ": ")
+				sendMessage(message)
 
-		# Sends current user's next message, checking if they have requested \quit
-		if (int(Server[UserCode + "state"]) == int(UserStates["ready"])):
-			message = input(serverGetString(Server, UserCode, "name") + ": ")
-			sendMessage(message)
+				# Checks for quit
+				quit = checkForQuit()
+				if abs(quit):
+					break
 
-			# Checks for quit
-			quit = checkForQuit()
-			if abs(quit):
-				break
+		print(3)
+		# Ends chat and cleans up server
+		quit = checkForQuit()
+		if (quit == 1):
+			print("You've ended the chat")
+			run = False
+			print(4)
+		elif (quit == -1):
+			print(serverGetString(Server, otherUserCode, "name") + " has ended the chat, would you like to quit? (y/n)")
+			query = input("> ")
+			if ((query.lower() in ["y", "yes", "ok", "okay"]) or (query == "\\quit")):
+				serverQuit(Server)
+				run = False
+				print(5)
+			else:
+				Server[otherUserCode + "state"] = str(UserStates["init"])
+				Server["state"] = str(ServerStates["init"])
+				print(6)
 
-	# Ends chat and cleans up server
-	quit = checkForQuit()
-	if (quit == 1):
-		print("You've ended the chat")
-	elif (quit == -1):
-		print(serverGetString(Server, otherUserCode, "name") + " has ended the chat")
-		serverQuit(Server)
-	print("Connection Terminated")
-
+		if not run:
+			print("Connection Terminated")
 
 
 ChatProtocol()
