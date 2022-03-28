@@ -153,8 +153,8 @@ class Server(Receiver):
 				
 			except socketlib.timeout:
 				pass
-			except:
 				
+			except:
 				self.stop()
 
 		# Wait for all threads
