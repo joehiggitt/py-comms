@@ -33,18 +33,12 @@ class Server(Server):
 		name = self._sockets[newUserRef][0]
 
 		# Outputs new connection to server
-		print(name + " has connected")
+		print(name + " is trying to connect")
 		print("Server has " + str(len(self._sockets)) + " active connections")
 
 		# Sends new user connection info, help info and the current user list
-		connectInfo = "You've joined the server as " + name
+		connectInfo = "Server has been found, please enter a suitable user name using the JOIN command"
 		self.sendToSocket(newUserRef, connectInfo)
-		self.help(newUserRef)
-		self.users(newUserRef)
-
-		# Alerts other users that a new user has connected
-		connectInfo = name + " has connected"
-		self.sendToAllOtherSockets(newUserRef, connectInfo)
 
 
 	def onDisconnect(self, socket):
@@ -64,7 +58,7 @@ class Server(Server):
 
 		# Alerts other users that a new user has connected
 		disconnectInfo = name + " has disconnected"
-		self.sendToAllOtherSockets(newUserRef, disconnectInfo)
+		self.sendToAllOtherSockets(userRef, disconnectInfo)
 
 		# Removes socket from socket list
 		self.removeSocket(userRef)
@@ -77,7 +71,7 @@ class Server(Server):
 	def onMessage(self, socket, message):
 		"""
 		Called when a server message is received.
-		Parses command and parameters from the server messasge, executing the corresponding command.
+		Parses command and parameters from the server messasge, executing the corresponding command if authorised.
 
 		socket: The socket which has sent the server message.
 		message: The server message.
@@ -87,33 +81,59 @@ class Server(Server):
 		(command, sep, parameters) = message.strip().partition(" ")
 		userRef = self.getSocket(socket)
 
-		# Executes corresponding command
-		if (command.upper() == "HELP"):
-			print("HELP command")
-			self.help(userRef)
-		elif (command.upper() == "USERS"):
-			print("USERS command")
-			self.users(userRef)
-		elif (command.upper() == "RENAME"):
-			print("RENAME command")
-			name = parameters.replace(" ", "")
-			if (name == ""):
-				self.error(userRef, 1)
+		if (userRef != -1):
+			name = self._sockets[userRef][0]
+			authorised = self._sockets[userRef][2]
+
+			# Executes corresponding command
+			if (command.upper() == "HELP"):
+				print("HELP command - " + name)
+				self.help(userRef)
+
+			elif (command.upper() == "USERS"):
+				print("USERS command - " + name)
+				self.users(userRef)
+
+			elif (command.upper() == "JOIN"):
+				if not authorised:
+					print("JOIN command - " + name)
+					newName = parameters.replace(" ", "")
+					if (newName == ""):
+						self.error(userRef, 2)
+					else:
+						self.join(userRef, newName)
+				else:
+					self.error(userRef, 1)
+
+			elif (command.upper() == "RENAME"):
+				if authorised:
+					print("RENAME command - " + name)
+					newName = parameters.replace(" ", "")
+					if (newName == ""):
+						self.error(userRef, 3)
+					else:
+						self.rename(userRef, newName)
+				else:
+					self.error(userRef, 1)
+
+			elif (command.upper() == "MESSAGE"):
+				if authorised:
+					print("MESSAGE command - " + name)
+					(target, sep, content) = parameters.strip().partition(" ")
+					if ((target == "") or (content == "")):
+						self.error(userRef, 4)
+					else:
+						self.message(userRef, target, content)
+				else:
+					self.error(userRef, 1)
+
+			elif (command.upper() == "QUIT"):
+				print("QUIT command - " + name)
+				return self.quit(userRef)
+
 			else:
-				self.rename(userRef, name)
-		elif (command.upper() == "MESSAGE"):
-			print("MESSAGE command")
-			(target, sep, content) = parameters.strip().partition(" ")
-			if ((target == "") or (content == "")):
-				self.error(userRef, 2)
-			else:
-				self.message(userRef, target, content)
-		elif (command.upper() == "QUIT"):
-			print("QUIT command")
-			return self.quit(userRef)
-		else:
-			print("Invalid command")
-			self.error(userRef, 3)
+				print("Invalid command")
+				self.error(userRef, 5)
 
 		return True
 
@@ -126,9 +146,29 @@ class Server(Server):
 		name: The screen name that the new socket will use.
 		Returns: The index of the new socket.
 		"""
-		self._sockets.append([name, socket])
+		self._sockets.append([name, socket, False])
 		print(self._sockets[len(self._sockets) - 1][0] + " added to server")
 		return len(self._sockets) - 1  # Returns new index
+
+	def renameSocket(self, userRef, newName, isJoin=False):
+		"""
+		Updates a socket's screen name.
+
+		userRef: The index of the socket to update the screen name of.
+		newName: The new screen name of the socket.
+		isJoin: True if user is joining the server, False otherwise. Is False by default.
+		Returns: True if socket successfully renamed, False otherwise.
+		"""
+		oldName = self._sockets[userRef][0]
+
+		if ((self.getSocketByName(newName) == -1) and (newName.lower() not in ["all", "everyone"])):
+			self._sockets[userRef][0] = newName
+			if isJoin:
+				self._sockets[userRef][2] = True
+			return True
+
+		self.error(userRef, 6)
+		return False
 
 	def sendToSocket(self, userRef, message):
 		"""
@@ -201,31 +241,18 @@ class Server(Server):
 		userRef: The index of the socket to send the information to.
 		"""
 		helpInfo = "\nAvailable Commands:"
-		helpInfo += "\n    HELP                                  - Get list of available commands"
-		helpInfo += "\n    USERS                                 - Get a list of all users currently online"
-		helpInfo += "\n    RENAME <new name>                     - Change your screen name"
-		helpInfo += "\n    MESSAGE <recipient> <message content> - Send a message to the recipient (use ALL to send a message to everyone)"
-		helpInfo += "\n    QUIT                                  - Quit the chat server"
+		if (self._sockets[userRef][2] == True):
+			helpInfo += "\n    HELP                                  - Get list of available commands"
+			helpInfo += "\n    USERS                                 - Get a list of all users currently online"
+			helpInfo += "\n    RENAME <new name>                     - Change your screen name"
+			helpInfo += "\n    MESSAGE <recipient> <message content> - Send a message to the recipient (use ALL to send a message to everyone)"
+			helpInfo += "\n    QUIT                                  - Quit the chat server"
+		else:
+			helpInfo += "\n    HELP            - Get list of available commands"
+			helpInfo += "\n    USERS           - Get a list of all users currently online"
+			helpInfo += "\n    JOIN <new name> - Join the chat server with a unique screen name"
+			helpInfo += "\n    QUIT            - Quit the chat server"
 		self.sendToSocket(userRef, helpInfo)
-		
-	def rename(self, userRef, newName):
-		"""
-		Updates a socket's screen name.
-
-		userRef: The index of the socket to update the screen name of.
-		newName: The new screen name of the socket.
-		Returns: True if socket successfully renamed, False otherwise.
-		"""
-		oldName = self._sockets[userRef][0]
-
-		if ((self.getSocketByName(newName) == -1) and (newName.lower() not in ["all", "everyone"])):
-			self._sockets[userRef][0] = newName
-			self.sendToSocket(userRef, "Your screen name has been changed to " + newName)
-			self.sendToAllOtherSockets(userRef, oldName + " has changed their name to " + newName)
-			return True
-
-		self.error(userRef, 4)
-		return False
 
 	def users(self, userRef):
 		"""
@@ -241,8 +268,40 @@ class Server(Server):
 			for i in range(num):
 				usersInfo += "\n    " + self._sockets[i][0]
 				if (i == userRef):
-					usersInfo += " - You"
+					usersInfo += " (You)"
 		self.sendToSocket(userRef, usersInfo)
+
+	def join(self, userRef, newName):
+		"""
+		Updates a socket's screen name.
+
+		userRef: The index of the socket to update the screen name of.
+		newName: The new screen name of the socket.
+		Returns: True if socket successfully renamed, False otherwise.
+		"""
+		isUpdated = self.renameSocket(userRef, newName, True)
+
+		if isUpdated:
+			self.sendToSocket(userRef, "You've successfully joined the server as " + newName)
+			self.help(userRef)
+			self.users(userRef)
+
+			self.sendToAllOtherSockets(userRef, newName + " has joined")
+
+	def rename(self, userRef, newName):
+		"""
+		Updates a socket's screen name.
+
+		userRef: The index of the socket to update the screen name of.
+		newName: The new screen name of the socket.
+		"""
+		oldName = self._sockets[userRef][0]
+
+		isUpdated = self.renameSocket(userRef, newName)
+
+		if isUpdated:
+			self.sendToSocket(userRef, "Your screen name has been changed to " + newName)
+			self.sendToAllOtherSockets(userRef, oldName + " has changed their name to " + newName)
 		
 	def message(self, userRef, target, content):
 		"""
@@ -269,7 +328,7 @@ class Server(Server):
 
 			targetSocket = self.getSocketByName(target)
 			if (targetSocket == -1):
-				self.error(userRef, 5)
+				self.error(userRef, 7)
 				return
 
 			self.sendToSocket(targetSocket, message)
@@ -290,21 +349,25 @@ class Server(Server):
 
 	def error(self, userRef, code):
 		"""
-		Sends an error message to the user.
+		Sends a usage error message to the user.
 
 		userRef: The index of the socket to send the message to.
 		code: The error code.
 		"""
 		errorInfo = "\n"
 		if (code == 1):
-			errorInfo += "Incorrect usage of RENAME command. Use following format:\n    RENAME <new name>"
+			errorInfo += "You do not have access to that command. For a list of available commands, enter HELP."
 		elif (code == 2):
-			errorInfo += "Incorrect usage of MESSAGE command. Use following format:\n    MESSAGE <recipient> <message content>"
+			errorInfo += "Incorrect usage of JOIN command. Use following format:\n    JOIN <new name>"
 		elif (code == 3):
-			errorInfo += "Unrecognised command entered - check your spelling. For a list of available commands, enter HELP."
+			errorInfo += "Incorrect usage of RENAME command. Use following format:\n    RENAME <new name>"
 		elif (code == 4):
-			errorInfo += "New name entered is unavailable - try a different name. For a list of active users, enter USERS."
+			errorInfo += "Incorrect usage of MESSAGE command. Use following format:\n    MESSAGE <recipient> <message content>"
 		elif (code == 5):
+			errorInfo += "Unrecognised command entered - check your spelling. For a list of available commands, enter HELP."
+		elif (code == 6):
+			errorInfo += "New name entered is unavailable - try a different name. For a list of active users, enter USERS."
+		elif (code == 7):
 			errorInfo += "Unrecognised name entered - check your spelling. For a list of active users, enter USERS."
 		else:
 			return
@@ -314,8 +377,15 @@ class Server(Server):
 
 
 def error(code):
+	"""
+	Sends a server error message to the user.
+
+	code: The error code.
+	"""
 	if (code == 1):
 		print("Incorrect usage of server. Use following format:\n    $ python3 " + str(sys.argv[0]) + " <ip address> <port>")
+	elif (code == 2):
+		print("IP address or port couldn't be found.")
 	sys.exit()
 
 
@@ -331,4 +401,7 @@ port = int(sys.argv[2])
 server = Server()
 
 # Start server
-server.start(ip, port)
+try:
+	server.start(ip, port)
+except:
+	error(2)
