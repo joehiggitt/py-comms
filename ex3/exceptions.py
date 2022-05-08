@@ -9,24 +9,24 @@ from requests.exceptions import RequestException
 
 # 400 error
 class BadRequestError(RequestException):
-    """A 400 Bad Request error occurred."""
+	"""A 400 Bad Request error occurred."""
 
 # 401 error
 class InvalidTokenError(RequestException):
-    """The API token was invalid or missing."""
+	"""The API token was invalid or missing."""
 
 # 403 error
 class BadSlotError(RequestException):
-    """The requested slot does not exist."""
+	"""The requested slot does not exist."""
 
 # 404 error
 class NotProcessedError(RequestException):
-    """The request has not been processed."""
+	"""The request has not been processed."""
 
 # 409 error
 class SlotUnavailableError(RequestException):
-    """The requested slot is not available."""
+	"""The requested slot is not available."""
 
 # 451 error
 class ReservationLimitError(RequestException):
-    """The client already holds the maximum number of reservations."""
+	"""The client already holds the maximum number of reservations."""
