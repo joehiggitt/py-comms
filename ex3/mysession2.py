@@ -7,7 +7,7 @@ from exceptions import (
 	ServiceUnavailableError, UnexpectedError)
 
 
-def initAPI() -> dict:
+def initAPI():
 	# Load the configuration file containing the URLs and keys
 	config = configparser.ConfigParser()
 	config.read("api.ini")
@@ -26,7 +26,7 @@ def initAPI() -> dict:
 										 float(config['global']['delay']),
 										 "band")
 
-	return {"HOTEL": hotel, "BAND": band}
+	return [hotel, band]
 
 def callAPIMethod(method, parameters: list=[]):
 	response = None
@@ -41,6 +41,7 @@ def callAPIMethod(method, parameters: list=[]):
 		SlotUnavailableError, ReservationLimitError, ServerError,
 		ServiceUnavailableError) as e:
 		errorAPI(e.message, e.status_code)
+		continue
 
 	return response
 
@@ -54,18 +55,6 @@ def errorAPI(message: str, errorCode: int=-1):
 def quit(services):
 	print("Quitting application.")
 	# releaseAllSlots(services)
-
-def getHelp() -> str:
-	helpInfo = "Available Commands:"
-	helpInfo += "\n    HELP                            - Get list of available commands"
-	helpInfo += "\n    ALLSLOTS <service>              - Returns a list of available slots from that service"
-	helpInfo += "\n    MYSLOTS <service>               - Returns a list of slots you've reserved from that service"
-	helpInfo += "\n    RESERVESLOT <service> <slot id> - Reserves a slot from that service that is available (Max: 2 per service)"
-	helpInfo += "\n    RELEASESLOT <service> <slot id> - Releases a slot from that service that you've reserved"
-	helpInfo += "\n    QUIT                            - Quit the chat server"
-	helpInfo += "\n<service> must be either HOTEL or BAND"
-	helpInfo += "\n<slot id> must be a valid slot between 1 and 500"
-	return helpInfo
 
 def allSlots(service) -> list:
 	response = callAPIMethod(service.get_slots_available)
@@ -128,74 +117,69 @@ def formatResponse(slots: list, num: int=10) -> str:
 			text += "\n    "
 	return text
 
-
 def run():
+	NUMTRIES = 3
+	
 	services = initAPI()
+	releaseAllSlots(services)
 
-	print("-- WeddingPlannerXL --\n\nWelcome to our handy client for booking your wedding needs!")
-	print(getHelp())
+	print("-- AutoWeddingPlannerXL --\n\nWelcome to our automatic client for booking your wedding needs!\nWe're going to have a quick look for which slots are available for the band and hotel.")
 
-	while True:
-		parameters = input("\n> ").split()
-		print()
+	bestSlot = -1
+	for _ in range(NUMTRIES):
+		slots = []
+		for service in services:
+			slots.append(allSlots(service))
 
-		try:
-			command = parameters.pop(0)
-		except IndexError:
-			print("Desired command must be provided.")
-			continue
+		commonSlots = slots[0]
+		for i in range(1, len(slots)):
+			commonSlots = sorted([value for value in commonSlots if value in slots[i]])
 
-		# Exits client
-		if (command.upper() == "QUIT"):
-			quit(list(services.values()))
+		print("\nWe've identified the following slots which are available for both the band and hotel:")
+		print(formatResponse(commonSlots))
+
+		for i in range(len(commonSlots)):
+			slot = commonSlots[i]
+
+			isReserved = []
+			for service in services:
+				isReserved.append(reserveSlot(service, [slot]))
+
+			if False in isReserved:
+				for k in range(len(isReserved)):
+					if (isReserved[k] == False):
+						releaseSlot(service, [slot])
+
+				time.sleep(1)
+				continue
+
 			break
 
-		elif (command.upper() == "HELP"):
-			print(getHelp())
-			continue
-
-		try:
-			service = services[parameters.pop(0).upper()]
-		except IndexError:
-			print("A service must be provided.")
-			continue
-		except KeyError:
-			print("Service provided is invalid.")
-			continue
-
-		# Executes corresponding command
-		if (command.upper() == "ALLSLOTS"):
-			response = allSlots(service)
-
-			if (len(response) == 0):
-				print("No slots available currently.")
-			else:
-				print("Available Slots:")
-				print(formatResponse(response))
-
-		elif (command.upper() == "MYSLOTS"):
-			response = mySlots(service)
-
-			if (len(response) == 0):
-				print("You haven't reserved any slots yet.")
-			else:
-				print("My Slots:")
-				print(formatResponse(response))
-
-		elif (command.upper() == "RESERVESLOT"):
-			isReserved = reserveSlot(service, parameters)
-
-			if (isReserved == False):
-				print("Unfortunately, the slot couldn't be reserved.")
-			else:
-				print("Slot " + parameters[0] + " has been successfuly reserved.")
-
-		elif (command.upper() == "RELEASESLOT"):
-			response = releaseSlot(service, parameters)
-			print(response)
-
+		if ((bestSlot == -1) or (slot < bestSlot)):
+			bestSlot = slot
+			print("Slot " + str(bestSlot) + " has been successfuly reserved for both the band and hotel.")
 		else:
-			print("Command provided is invalid.")
+			print("No better booking could be found on this try.")
 
+		reservedSlots = []
+		for service in services:
+			reservedSlots.append(mySlots(service))
+
+		if (2 in [len(reservedSlots[i]) for i in range(len(reservedSlots))]):
+			for i in range(len(reservedSlots)):
+				if (len(reservedSlots[i]) == 2):
+					for j in range(len(reservedSlots[i])):
+						if (reservedSlots[i][j] != bestSlot):
+							releaseSlot(services[i], [reservedSlots[i][j]])
+
+		if (i < NUMTRIES - 1):
+			print("We can attempt to find you a better booking. Would you like us to do so? (y/n)")
+			query = input("> ")
+			if query.lower() in ["no", "n"]:
+				break
+			print("We will now try to find a better booking!")
+			time.sleep(1)
+		
+	print("\nYour bookings for the band and hotel at slot " + str(bestSlot) + " have been confirmed.\nWe'd like to wish you the best for your wedding day!")
 
 run()

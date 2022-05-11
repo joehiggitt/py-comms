@@ -21,7 +21,7 @@ from exceptions import (
 	SlotUnavailableError,ReservationLimitError)
 
 class ReservationApi:
-	def __init__(self, base_url: str, token: str, retries: int, delay: float):
+	def __init__(self, base_url: str, token: str, retries: int, delay: float, service: str=""):
 		"""
 		Create a new ReservationApi to communicate with a reservation server.
 
@@ -29,16 +29,25 @@ class ReservationApi:
 		token: The user's API token obtained from the control panel
 		retries: The maximum number of attempts to make for each request
 		delay: A delay to apply to each request to prevent server overload
+		service: The string name of the service being interfaced
 		"""
 		self.base_url = base_url
 		self.token    = token
 		self.retries  = retries
 		self.delay    = delay
+		self.service  = service
+
+	def get_service(self) -> str:
+		return self.service
 
 
 	def _reason(self, req: requests.Response) -> str:
 		"""
 		Obtains the reason associated with a response.
+
+		req: The response object
+
+		Returns: A string containing the reason for that response
 		"""
 		reason = ''
 
@@ -81,29 +90,8 @@ class ReservationApi:
 		endpoint: The end of the URL the request is being sent to
 
 		Returns: A list containg the request HTTP status and the content of the response
+		Raises: A HTTP-related error if one occurs
 		"""
-		# Your code goes here
-
-		# Allow for multiple retries if needed
-			# Perform the request.
-
-			# Delay before processing the response to avoid swamping server.
-
-			# 200 response indicates all is well - send back the json data.
-
-			# 5xx responses indicate a server-side error, show a warning
-			# (including the try number).
-
-			# 400 errors are client problems that are meaningful, so convert
-			# them to separate exceptions that can be caught and handled by
-			# the caller.
-
-			# Anything else is unexpected and may need to kill the client.
-
-		# Get here and retries have been exhausted, throw an appropriate
-		# exception.
-
-		# Gets URL to send request to
 		url = self.base_url + "/reservation" + endpoint
 
 		for i in range(self.retries):
@@ -117,7 +105,6 @@ class ReservationApi:
 
 			# Client errors (4xx)
 			elif ((response.status_code >= 400) and (response.status_code < 500)):
-				print("reason 4xx", self._reason(response), "\n")
 				if (response.status_code == 400):
 					raise BadRequestError
 				elif (response.status_code == 401):
@@ -131,70 +118,89 @@ class ReservationApi:
 				elif (response.status_code == 451):
 					raise ReservationLimitError
 				else:
-					raise Exception("Unexpected 4xx error")
+					raise UnexpectedError("Unexpected 4xx error.")
 
 			# Server errors (5xx)
 			elif ((response.status_code >= 500) and (response.status_code < 600)):
-				print("The server has temporarily become unavailable - Attempt " + str(i + 1))
-				print("reason 5xx", self._reason(response), "\n")
+				print("The server has temporarily become unavailable, we will try to process your request as soon as possible. Attempt " + str(i + 1))
 
 			# Unexpected errors
 			else:
-				raise Exception("Unexpected error")
+				raise UnexpectedError("Unexpected error. You may need to restart the program.")
 
-			# time.sleep(1)
+			time.sleep(self.delay)
 
-		out = [response.status_code]
+		# Successful request
 		if (response.status_code == 200):
-			out.append(response.json())
+			return response.json()
+
+		# Prolonged server errors (5xx) - need raising
+		elif ((response.status_code >= 500) and (response.status_code < 600)):
+			if (response.status_code == 500):
+				raise ServiceUnavailableError
+			elif (response.status_code == 503):
+				raise ServerError
+			else:
+				raise UnexpectedError("Persistent 5xx error.")
+
+		# Unexpected errors
 		else:
-			# raise Exception("Possibly unexpected error")
-			out.append(response.json()["message"])
-		return out
+			raise UnexpectedError("Unexpected error. You may need to restart the program.")
 
 
 	def get_slots_available(self) -> list:
 		"""
 		Obtains the list of slots currently available in the system.
 
-		Returns: 
+		Returns: A list containing the available slots
+		Raises: A HTTP-related error if one occurs
 		"""
 		response = self._send_request("GET", "/available")
-		if (response[0] == 200):
-			for i in range(len(response[1])):
-				response[1][i] = int(response[1][i]["id"])
-		return response		
+
+		# Processes response into list format
+		for i in range(len(response)):
+			response[i] = int(response[i]["id"])
+		
+		return response
 
 	def get_slots_held(self) -> list:
 		"""
 		Obtains the list of slots currently held by the client.
 
-		Returns:
+		Returns: A list containing the slots currently held by the client
+		Raises: A HTTP-related error if one occurs
 		"""
 		response = self._send_request("GET", "")
-		if (response[0] == 200):
-			for i in range(len(response[1])):
-				response[1][i] = int(response[1][i]["id"])
-		return response	
 
-	def release_slot(self, slot_id: int) -> list:
+		# Processes response into list format
+		for i in range(len(response)):
+			response[i] = int(response[i]["id"])
+
+		return response
+
+	def release_slot(self, slot_id: int) -> str:
 		"""
 		Releases a slot currently held by the client.
 
-		Returns: 
+		slot_id: The ID of the slot to be released
+
+		Returns: A message confirming that the slot has been deleted
+		Raises: A HTTP-related error if one occurs
 		"""
 		response = self._send_request("DELETE", "/" + str(slot_id))
-		if (response[0] == 200):
-			response[1] = response[1]["message"]
-		return response	
+		response = response["message"]
+		print(response)
+		return response
 		
-	def reserve_slot(self, slot_id: int) -> list:
+	def reserve_slot(self, slot_id: int) -> int:
 		"""
 		Attempts to reserve a slot for the client.
 
-		Returns:
+		slot_id: The ID of the slot to be reserved
+
+		Returns: The ID of the slot, confirming that it has been reserved
+		Raises: A HTTP-related error if one occurs
 		"""
 		response = self._send_request("POST", "/" + str(slot_id))
-		if (response[0] == 200):
-			response[1] = int(response[1]["id"])
-		return response	
+		response = int(response["id"])
+		return response
