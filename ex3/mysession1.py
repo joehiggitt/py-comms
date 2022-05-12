@@ -5,9 +5,15 @@ from exceptions import (
 	BadRequestError, InvalidTokenError, BadSlotError, NotProcessedError,
 	SlotUnavailableError,ReservationLimitError, ServerError,
 	ServiceUnavailableError, UnexpectedError)
+import time
 
 
 def initAPI() -> dict:
+	"""
+	Initialises the ReservationAPI objects and returns a reference to them.
+
+	Returns: Dictionary with references to 'HOTEL' and 'BAND' objects
+	"""
 	# Load the configuration file containing the URLs and keys
 	config = configparser.ConfigParser()
 	config.read("api.ini")
@@ -29,7 +35,18 @@ def initAPI() -> dict:
 	return {"HOTEL": hotel, "BAND": band}
 
 def callAPIMethod(method, parameters: list=[]):
+	"""
+	Calls a ReservationAPI method passed in to the function, passing in additional parameters if required.
+	Catches any client-side errors and reports them.
+
+	method: An ReservationAPI method
+	parameters: A list of parameters to pass into method
+
+	Returns: The response from the method call
+	"""
 	response = None
+
+	# Attempts to call the API method
 	try:
 		if (len(parameters) == 0):
 			response = method()
@@ -40,22 +57,31 @@ def callAPIMethod(method, parameters: list=[]):
 	except (BadRequestError, InvalidTokenError, BadSlotError, NotProcessedError,
 		SlotUnavailableError, ReservationLimitError, ServerError,
 		ServiceUnavailableError) as e:
-		errorAPI(e.message, e.status_code)
+		print(errorAPI(e.message, e.status_code))
 
 	return response
 
-def errorAPI(message: str, errorCode: int=-1):
-	print(message, end="")
+def errorAPI(message: str, errorCode: int=-1) -> str:
+	"""
+	Generates an error message.
+
+	message: The content of the error
+	errorCode: The HTTP error code (Optional)
+
+	Returns: A string representation of the error
+	"""
+	errorInfo = message
 	if (errorCode > 0):
-		print(" (" + str(errorCode) + ")", end="")
-	print()
-
-
-def quit(services):
-	print("Quitting application.")
-	# releaseAllSlots(services)
+		errorInfo += " (" + str(errorCode) + ")"
+	return errorInfo + "\n"
+	
 
 def getHelp() -> str:
+	"""
+	Generates help information.
+
+	Returns: A string representation of the help information
+	"""
 	helpInfo = "Available Commands:"
 	helpInfo += "\n    HELP                            - Get list of available commands"
 	helpInfo += "\n    ALLSLOTS <service>              - Returns a list of available slots from that service"
@@ -67,7 +93,14 @@ def getHelp() -> str:
 	helpInfo += "\n<slot id> must be a valid slot between 1 and 500"
 	return helpInfo
 
-def allSlots(service) -> list:
+def allSlots(service: reservationapi.ReservationApi) -> list:
+	"""
+	Gets all the available slots from the given service.
+
+	service: The service being called (ReservationAPI object)
+
+	Returns: A list of all available slots
+	"""
 	response = callAPIMethod(service.get_slots_available)
 	if (response == None):
 		return []
@@ -75,50 +108,78 @@ def allSlots(service) -> list:
 	return response
 	
 def mySlots(service) -> list:
+	"""
+	Gets all the slots currently reserved by this client on the given service.
+
+	service: The service being called (hotel or band object)
+
+	Returns: A list of current-client reserved slots
+	"""
 	response = callAPIMethod(service.get_slots_held)
 	if (response == None):
 		return []
 
 	return response
 	
-def reserveSlot(service, parameters: list) -> bool:
-	try:
-		slotId = int(parameters[0])		
-	except (ValueError, IndexError):
-		errorAPI("The slot ID provided was not valid.")
-		return False
+def reserveSlot(service, slotId: int) -> bool:
+	"""
+	Reserves a slot on the given service.
 
+	service: The service being called (hotel or band object)
+	slotId: The slot ID
+
+	Returns: True if slot reserved, false otherwise
+	"""
 	response = callAPIMethod(service.reserve_slot, [slotId])
 	if (response == None):
 		return False
 
+	# Checks whether the reservation was successful
 	isReserved = False
 	if (response == slotId):
 		isReserved = True
 
 	return isReserved
 
-def releaseSlot(service, parameters: list) -> str:
-	try:
-		slotId = int(parameters[0])		
-	except (ValueError, IndexError):
-		errorAPI("The slot ID provided was not valid.")
-		return
+def releaseSlot(service, slotId: int) -> str:
+	"""
+	Releases a slot on the given service that the current client already has reserved.
 
+	service: The service being called (hotel or band object)
+	slotId: The slot ID
+
+	Returns: A string confirmation from the server
+	"""
 	response = callAPIMethod(service.release_slot, [slotId])
 	if (response == None):
 		return
 
 	return response
 
-def releaseAllSlots(services):
+def releaseAllSlots(services: list):
+	"""
+	Releases all slot son the given service that the current client already has reserved.
+
+	services: A list containing all the services (ReservationAPI objects)
+	parameters: A list containing the slot ID in the first index position
+	"""
 	for service in services:
 		slots = mySlots(service)
-		while (len(slots) > 0):
-			releaseSlot(service, [slots[0]])
-			slots = mySlots(service)
+
+		# Releases all slots found for the current service
+		for i in range(len(slots)):
+			releaseSlot(service, slots[i])
+			time.sleep(1)
 
 def formatResponse(slots: list, num: int=10) -> str:
+	"""
+	Generates a string representation of a slot list.
+
+	slots: A list of slot IDs
+	num: Number of items per line
+
+	Returns: A string representation of the slots
+	"""
 	text = "    "
 	for i in range(len(slots)):
 		text += str(slots[i])
@@ -130,72 +191,88 @@ def formatResponse(slots: list, num: int=10) -> str:
 
 
 def run():
+	"""
+	Runs the client.
+	"""
 	services = initAPI()
 
 	print("-- WeddingPlannerXL --\n\nWelcome to our handy client for booking your wedding needs!")
 	print(getHelp())
 
+	# Main program loop
 	while True:
+		# Gets next command input
 		parameters = input("\n> ").split()
 		print()
 
+		# Attempts to parse command
 		try:
 			command = parameters.pop(0)
 		except IndexError:
 			print("Desired command must be provided.")
 			continue
 
-		# Exits client
+		# Commands requiring no parameters
 		if (command.upper() == "QUIT"):
-			quit(list(services.values()))
-			break
+			# Performs quit procedure
+			print("Quitting application.")
+			# releaseAllSlots(list(services.values()))
+			return
 
 		elif (command.upper() == "HELP"):
-			print(getHelp())
-			continue
-
-		try:
-			service = services[parameters.pop(0).upper()]
-		except IndexError:
-			print("A service must be provided.")
-			continue
-		except KeyError:
-			print("Service provided is invalid.")
-			continue
-
-		# Executes corresponding command
-		if (command.upper() == "ALLSLOTS"):
-			response = allSlots(service)
-
-			if (len(response) == 0):
-				print("No slots available currently.")
-			else:
-				print("Available Slots:")
-				print(formatResponse(response))
-
-		elif (command.upper() == "MYSLOTS"):
-			response = mySlots(service)
-
-			if (len(response) == 0):
-				print("You haven't reserved any slots yet.")
-			else:
-				print("My Slots:")
-				print(formatResponse(response))
-
-		elif (command.upper() == "RESERVESLOT"):
-			isReserved = reserveSlot(service, parameters)
-
-			if (isReserved == False):
-				print("Unfortunately, the slot couldn't be reserved.")
-			else:
-				print("Slot " + parameters[0] + " has been successfuly reserved.")
-
-		elif (command.upper() == "RELEASESLOT"):
-			response = releaseSlot(service, parameters)
-			print(response)
+			text = getHelp()
 
 		else:
-			print("Command provided is invalid.")
+			# Attempts to parse service
+			try:
+				service = services[parameters.pop(0).upper()]
+			except IndexError:
+				print("A service must be provided.")
+				continue
+			except KeyError:
+				print("Service provided is invalid.")
+				continue
 
+			# Commands requiring service
+			if (command.upper() == "ALLSLOTS"):
+				response = allSlots(service)
+
+				if (len(response) == 0):
+					text = "No slots available currently."
+				else:
+					text = "Available Slots:\n" + formatResponse(response)
+
+			elif (command.upper() == "MYSLOTS"):
+				response = mySlots(service)
+
+				if (len(response) == 0):
+					text = "You haven't reserved any slots yet."
+				else:
+					text = "My Slots:\n" + formatResponse(response)
+
+			else:
+				try:
+					slotId = int(parameters[0])		
+				except (ValueError, IndexError):
+					print("The slot ID provided was not valid.")
+					continue
+
+				# Commands requiring service and slot ID
+				if (command.upper() == "RESERVESLOT"):
+					isReserved = reserveSlot(service, slotId)
+
+					if (isReserved == False):
+						text = "Unfortunately, the slot couldn't be reserved."
+					else:
+						text = "Slot " + str(slotId) + " has been successfuly reserved."
+
+				elif (command.upper() == "RELEASESLOT"):
+					text = releaseSlot(service, slotId)
+
+				else:
+					print("Command provided is invalid.")
+					continue
+
+		print(text)
 
 run()

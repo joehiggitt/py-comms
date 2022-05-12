@@ -97,7 +97,6 @@ class ReservationApi:
 		for i in range(self.retries):
 			# Performs the request
 			response = requests.request(method.upper(), url, headers=self._headers())
-			# print(" status:", response.status_code)
 
 			# Successful request
 			if (response.status_code == 200):
@@ -189,7 +188,6 @@ class ReservationApi:
 		"""
 		response = self._send_request("DELETE", "/" + str(slot_id))
 		response = response["message"]
-		print(response)
 		return response
 		
 	def reserve_slot(self, slot_id: int) -> int:
