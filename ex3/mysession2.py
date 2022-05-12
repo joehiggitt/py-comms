@@ -191,35 +191,42 @@ def formatResponse(slots: list, num: int=10) -> str:
 
 def run():
 	NUMTRIES = 3
-	
 	services = initAPI()
 
 	print("-- AutoWeddingPlannerXL --\n\nWelcome to our automatic client for booking your wedding needs!")
 
+	# Gets all reserved slots for each service
 	reservedSlots = []
 	for service in services:
 		reservedSlots.append(mySlots(service))
 
 	print("We're just checking which slots you already have reserved (if any).")
 
+	# Finds the common slots between all services
 	commonSlots = reservedSlots[0]
 	for i in range(1, len(reservedSlots)):
 		commonSlots = sorted([value for value in commonSlots if value in reservedSlots[i]])
 
+	# Finds if a potential 'best' slot has already been reserved and initilises bestSlot to that
 	bestSlot = -1
 	if (len(commonSlots) > 0):
 		for i in range(len(commonSlots)):
 			if ((bestSlot == -1) or (commonSlots[i] < bestSlot)):
 				bestSlot = commonSlots[i]
+	# Otherwise sets to -1 (indicating not set) and releases all currently reserved slots
 	else:
 		releaseAllSlots(services)
 
+	# Attempts to find better reservation NUMTRIES times
 	for _ in range(NUMTRIES):
 		print("\nWe're going to have a quick look for which slots are available for the band and hotel.")
+
+		# Gets all available slots for each service
 		slots = []
 		for service in services:
 			slots.append(allSlots(service))
 
+		# Finds the common slots between all services
 		commonSlots = slots[0]
 		for i in range(1, len(slots)):
 			commonSlots = sorted([value for value in commonSlots if value in slots[i]])
@@ -227,33 +234,39 @@ def run():
 		print("\nWe've identified the following slots which are available for both the band and hotel:")
 		print(formatResponse(commonSlots))
 
+		# Attempts to reserve 'best' slot
 		for i in range(len(commonSlots)):
 			slot = commonSlots[i]
 
+			# Reserves current earliest slot at given service
 			isReserved = []
 			for service in services:
 				isReserved.append(reserveSlot(service, slot))
 
+			# If can't reserved slot, releases all other reserved slots with current index
 			if False in isReserved:
 				for k in range(len(isReserved)):
 					if (isReserved[k] == False):
 						releaseSlot(service, slot)
-
 				time.sleep(1)
 				continue
 
+			# Exits as soon as same slots have been reserved for all services
 			break
 
+		# Checks whether the slot reserved is the 'best'
 		if ((bestSlot == -1) or (slot < bestSlot)):
 			bestSlot = slot
 			print("Slot " + str(bestSlot) + " has been successfuly reserved for both the band and hotel.")
 		else:
 			print("No better booking could be found on this try.")
 
+		# Gets all reserved slots for each service
 		reservedSlots = []
 		for service in services:
 			reservedSlots.append(mySlots(service))
 
+		# Releases the less 'best' slot if 2 slots currently booked
 		if (2 in [len(reservedSlots[i]) for i in range(len(reservedSlots))]):
 			for i in range(len(reservedSlots)):
 				if (len(reservedSlots[i]) == 2):
@@ -261,6 +274,7 @@ def run():
 						if (reservedSlots[i][j] != bestSlot):
 							releaseSlot(services[i], reservedSlots[i][j])
 
+		# Queries whether client wishes to attempt better booking
 		if (i < NUMTRIES - 1):
 			print("We can attempt to find you a better booking. Would you like us to do so? (y/n)")
 			query = input("> ")
@@ -270,5 +284,6 @@ def run():
 			time.sleep(1)
 		
 	print("\nYour bookings for the band and hotel at slot " + str(bestSlot) + " have been confirmed.\nWe'd like to wish you the best for your wedding day!")
+
 
 run()
